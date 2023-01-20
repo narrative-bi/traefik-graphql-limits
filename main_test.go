@@ -1,82 +1,123 @@
 package traefik_graphql_limits
 
 import (
-  // "fmt"
-  "strings"
+	// "fmt"
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestGraphqlLimitOtherEndpoints(t *testing.T) {
+func TestGraphqlLimitGetEndpoint(t *testing.T) {
 	cfg := CreateConfig()
 
-  ctx := context.Background()
+	ctx := context.Background()
 	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {})
 
-	handler, err := New(ctx, next, cfg, "demo-plugin")
+	handler, err := New(ctx, next, cfg, "traefik-graphql-limits-plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost", strings.NewReader(""))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	recorder := httptest.NewRecorder()
 
-  body := `{
-    "query": "query { hello }"
-  }`
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost",  strings.NewReader(body))
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	handler.ServeHTTP(recorder, req)
 
-  resp := recorder.Result()
-
-  // fmt.Println(resp.StatusCode)
+	resp := recorder.Result()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("invalid status code: %d", resp.StatusCode)
 	}
 }
 
-// func TestGraphqlLimit(t *testing.T) {
-// 	cfg.Headers["X-Host"] = "[[.Host]]"
-// 	cfg.Headers["X-Method"] = "[[.Method]]"
-// 	cfg.Headers["X-URL"] = "[[.URL]]"
-// 	cfg.Headers["X-URL"] = "[[.URL]]"
-// 	cfg.Headers["X-Demo"] = "test"
-//
-// 	ctx := context.Background()
-// 	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {})
-//
-// 	handler, err := New(ctx, next, cfg, "demo-plugin")
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-//
-// 	recorder := httptest.NewRecorder()
-//
-// 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost", nil)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-//
-// 	handler.ServeHTTP(recorder, req)
-//
-// 	assertHeader(t, req, "X-Host", "localhost")
-// 	assertHeader(t, req, "X-URL", "http://localhost")
-// 	assertHeader(t, req, "X-Method", "GET")
-// 	assertHeader(t, req, "X-Demo", "test")
-// }
-//
-// func assertHeader(t *testing.T, req *http.Request, key, expected string) {
-// 	t.Helper()
-//
-// 	if req.Header.Get(key) != expected {
-// 		t.Errorf("invalid header value: %s", req.Header.Get(key))
-// 	}
-// }
+func TestGraphqlLimitOtherPath(t *testing.T) {
+	cfg := CreateConfig()
+	cfg.GraphQLPath = "/graphql"
+
+	ctx := context.Background()
+	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {})
+
+	handler, err := New(ctx, next, cfg, "traefik-graphql-limits-plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/api/v1", strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("invalid status code: %d", resp.StatusCode)
+	}
+}
+
+func TestGraphqlLimitDepthNotSet(t *testing.T) {
+	cfg := CreateConfig()
+	cfg.GraphQLPath = "/graphql"
+	cfg.DepthLimit = 0
+
+	ctx := context.Background()
+	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {})
+
+	handler, err := New(ctx, next, cfg, "traefik-graphql-limits-plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/graphql", strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("invalid status code: %d", resp.StatusCode)
+	}
+}
+
+func TestGraphqlLimitDepthSet(t *testing.T) {
+	cfg := CreateConfig()
+	cfg.GraphQLPath = "/graphql"
+	cfg.DepthLimit = 5
+
+	ctx := context.Background()
+	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {})
+
+	handler, err := New(ctx, next, cfg, "traefik-graphql-limits-plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/graphql", strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("invalid status code: %d", resp.StatusCode)
+	}
+}
