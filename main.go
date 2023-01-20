@@ -3,63 +3,117 @@ package traefik_graphql_limits
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"io"
+	"log"
 	"net/http"
-	"text/template"
 )
 
-// Config the plugin configuration.
+const errorBodyReadResponse = `{
+  "errors": [
+    {
+      "code": 400,
+      "message": "Failed to read request body."
+    }
+  ]
+}`
+
+
+// const errorGraphqlParsingResponse = `{
+//   "errors": [
+//     {
+//       "code": 400,
+//       "message": "Failed to parse query"
+//     }
+//   ]
+// }`
+
 type Config struct {
-	Headers map[string]string `json:"headers,omitempty"`
+	GraphQLPath string
+  DepthLimit int
+  BatchLimit int
+  NodeLimit int
 }
 
-// CreateConfig creates the default plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
-		Headers: make(map[string]string),
+		GraphQLPath: "/graphql",
+    DepthLimit: 0,
+    BatchLimit: 0,
+    NodeLimit: 0,
 	}
 }
 
-// Demo a Demo plugin.
-type Demo struct {
-	next     http.Handler
-	headers  map[string]string
-	name     string
-	template *template.Template
+
+type GraphqlLimit struct {
+	next        http.Handler
+	name        string
+  graphQLPath string
+	depthLimit int
+  batchLimit int
+  nodeLimit int
 }
 
-// New created a new Demo plugin.
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
-	if len(config.Headers) == 0 {
-		return nil, fmt.Errorf("headers cannot be empty")
-	}
-
-	return &Demo{
-		headers:  config.Headers,
-		next:     next,
-		name:     name,
-		template: template.New("demo").Delims("[[", "]]"),
+	return &GraphqlLimit {
+		next:        next,
+		name:        name,
+		graphQLPath: config.GraphQLPath,
+    depthLimit: config.DepthLimit,
+    batchLimit: config.BatchLimit,
+    nodeLimit: config.NodeLimit,
 	}, nil
 }
 
-func (a *Demo) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	for key, value := range a.headers {
-		tmpl, err := a.template.Parse(value)
-		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
+func respondWithJson(rw http.ResponseWriter, statusCode int, json string) {
+  rw.Header().Set("Content-Type", "application/json")
+  rw.WriteHeader(statusCode)
+  _, err := rw.Write([]byte(json))
+  if err != nil {
+		log.Printf("Error with response: %v", err)
+  }
+}
 
-		writer := &bytes.Buffer{}
+func (d *GraphqlLimit) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	body, err := io.ReadAll(req.Body)
 
-		err = tmpl.Execute(writer, req)
-		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		req.Header.Set(key, writer.String())
+	if err != nil {
+		log.Printf("Error reading body: %v", err)
+    respondWithJson(rw, http.StatusBadRequest, errorBodyReadResponse)
+		return
 	}
 
-	a.next.ServeHTTP(rw, req)
+
+	if req.Method != "POST" || req.URL.Path != d.graphQLPath {
+    req.Body = io.NopCloser(bytes.NewBuffer(body))
+    d.next.ServeHTTP(rw, req)
+    return
+  }
+
+  log.Printf("Checking graphql query")
+
+  // if d.depthLimit > 0 {
+  //   if checkIfRequestIsTooDeep(string(body), d.depthLimit) {
+  //     rw.Header().Set("Content-Type", "application/json")
+  //     rw.Write([]byte(`{
+  //       "errors": [
+  //         {
+  //           "message": "GraphQL query is too deep."
+  //         }
+  //       ]
+  //     }`))
+  //     return
+  //   }
+  // }
+
+  // if checkIfRequestIsIntrospection(string(body)) {
+  // 	rw.Header().Set("Content-Type", "application/json")
+  // 	rw.Write([]byte(`{
+  // 		"errors": [
+  // 			{
+  // 				"message": "GraphQL introspection is not allowed."
+  // 			}
+  // 		]
+  // 	}`))
+  // 	return
+  // }
 }
