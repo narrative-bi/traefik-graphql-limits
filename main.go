@@ -1,4 +1,5 @@
-package traefik_graphql_limits
+// Package traefikgraphqllimits provides a Traefik plugin to limit the depth of a GraphQL query
+package traefikgraphqllimits
 
 import (
 	"bytes"
@@ -32,7 +33,7 @@ const errorGraphqlParsingResponse = `{
   ]
 }`
 
-func buildGraphqlMaxDepthError(maxDepth int, depthLimit int) string {
+func buildGraphqlMaxDepthError(maxDepth, depthLimit int) string {
 	errorBody := fmt.Sprintf(`{
     "errors": [
       {
@@ -44,7 +45,7 @@ func buildGraphqlMaxDepthError(maxDepth int, depthLimit int) string {
 	return errorBody
 }
 
-func buildGraphqlBatchLimitError(batchCount int, batchLimit int) string {
+func buildGraphqlBatchLimitError(batchCount, batchLimit int) string {
 	errorBody := fmt.Sprintf(`{
     "errors": [
       {
@@ -56,7 +57,7 @@ func buildGraphqlBatchLimitError(batchCount int, batchLimit int) string {
 	return errorBody
 }
 
-func buildGraphqlNodeLimitError(nodeCount int, nodeLimit int) string {
+func buildGraphqlNodeLimitError(nodeCount, nodeLimit int) string {
 	errorBody := fmt.Sprintf(`{
     "errors": [
       {
@@ -68,12 +69,14 @@ func buildGraphqlNodeLimitError(nodeCount int, nodeLimit int) string {
 	return errorBody
 }
 
+// QueryMetrics the query metrics for check.
 type QueryMetrics struct {
 	maxDepth   int
 	batchCount int
 	nodeCount  int
 }
 
+// CreateQueryMetrics creates the default query metrics.
 func (queryMetrics QueryMetrics) CreateQueryMetrics() QueryMetrics {
 	queryMetrics.maxDepth = 0
 	queryMetrics.batchCount = 0
@@ -81,6 +84,7 @@ func (queryMetrics QueryMetrics) CreateQueryMetrics() QueryMetrics {
 	return queryMetrics
 }
 
+// Config the plugin configuration.
 type Config struct {
 	GraphQLPath string
 	DepthLimit  int
@@ -88,6 +92,7 @@ type Config struct {
 	NodeLimit   int
 }
 
+// CreateConfig creates the default plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
 		GraphQLPath: "/graphql",
@@ -97,6 +102,7 @@ func CreateConfig() *Config {
 	}
 }
 
+// GraphqlLimit plugin configuration structure.
 type GraphqlLimit struct {
 	next        http.Handler
 	name        string
@@ -118,15 +124,15 @@ func calculateQueryMetrics(astDoc *ast.Document) QueryMetrics {
 
 					for _, element := range p.Path {
 						if element == kinds.SelectionSet {
-							depth += 1
+							depth++
 						}
 					}
 
 					// NOTE: Top level query is start of new batch, otherwise it is a node
 					if depth == 0 {
-						queryMetrics.batchCount += 1
+						queryMetrics.batchCount++
 					} else {
-						queryMetrics.nodeCount += 1
+						queryMetrics.nodeCount++
 					}
 
 					if depth > queryMetrics.maxDepth {
@@ -144,6 +150,7 @@ func calculateQueryMetrics(astDoc *ast.Document) QueryMetrics {
 	return queryMetrics
 }
 
+// New created a new plugin.
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
 	return &GraphqlLimit{
 		next:        next,
@@ -155,57 +162,57 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	}, nil
 }
 
-func respondWithJson(rw http.ResponseWriter, statusCode int, json string) {
+func respondWithJSONError(rw http.ResponseWriter, json string) {
 	rw.Header().Set("Content-Type", "application/json")
-	rw.WriteHeader(statusCode)
+	rw.WriteHeader(http.StatusBadRequest)
 	_, err := rw.Write([]byte(json))
 	if err != nil {
 		log.Printf("Error with response: %v", err)
 	}
 }
 
+func isGraphqlRequest(req *http.Request, path string) bool {
+	return req.Method == "POST" && req.URL.Path == path
+}
+
+func needToCheckLimits(depthLimit, batchLimit, nodeLimit int) bool {
+	return depthLimit > 0 || batchLimit > 0 || nodeLimit > 0
+}
+
 func (d *GraphqlLimit) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	body, err := io.ReadAll(req.Body)
-
 	if err != nil {
 		log.Printf("Error reading body: %v", err)
-		respondWithJson(rw, http.StatusBadRequest, errorBodyReadResponse)
+		respondWithJSONError(rw, errorBodyReadResponse)
 		return
 	}
 
-	if req.Method == "POST" && req.URL.Path == d.graphQLPath {
-		log.Printf("Checking graphql query")
+	if isGraphqlRequest(req, d.graphQLPath) && needToCheckLimits(d.depthLimit, d.batchLimit, d.nodeLimit) {
+		params := parser.ParseParams{
+			Source: string(body),
+		}
 
-		if d.depthLimit > 0 || d.batchLimit > 0 || d.nodeLimit > 0 {
-			params := parser.ParseParams{
-				Source: string(body),
-			}
+		parseResults, err := parser.Parse(params)
+		if err != nil {
+			respondWithJSONError(rw, errorGraphqlParsingResponse)
+			return
+		}
 
-			parseResults, err := parser.Parse(params)
+		queryMetrics := calculateQueryMetrics(parseResults)
 
-			if err != nil {
-				respondWithJson(rw, http.StatusBadRequest, errorGraphqlParsingResponse)
-				return
-			}
+		if d.depthLimit > 0 && queryMetrics.maxDepth > d.depthLimit {
+			respondWithJSONError(rw, buildGraphqlMaxDepthError(queryMetrics.maxDepth, d.depthLimit))
+			return
+		}
 
-			queryMetrics := calculateQueryMetrics(parseResults)
+		if d.batchLimit > 0 && queryMetrics.batchCount > d.batchLimit {
+			respondWithJSONError(rw, buildGraphqlBatchLimitError(queryMetrics.batchCount, d.batchLimit))
+		}
 
-			if d.depthLimit > 0 && queryMetrics.maxDepth > d.depthLimit {
-				respondWithJson(rw, http.StatusBadRequest, buildGraphqlMaxDepthError(queryMetrics.maxDepth, d.depthLimit))
-				return
-			}
-
-			if d.batchLimit > 0 && queryMetrics.batchCount > d.batchLimit {
-				respondWithJson(rw, http.StatusBadRequest, buildGraphqlBatchLimitError(queryMetrics.batchCount, d.batchLimit))
-			}
-
-			if d.nodeLimit > 0 && queryMetrics.nodeCount > d.nodeLimit {
-				respondWithJson(rw, http.StatusBadRequest, buildGraphqlNodeLimitError(queryMetrics.nodeCount, d.nodeLimit))
-			}
+		if d.nodeLimit > 0 && queryMetrics.nodeCount > d.nodeLimit {
+			respondWithJSONError(rw, buildGraphqlNodeLimitError(queryMetrics.nodeCount, d.nodeLimit))
 		}
 	}
-
-	log.Printf("Pass through")
 
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 	d.next.ServeHTTP(rw, req)

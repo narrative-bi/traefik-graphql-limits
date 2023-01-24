@@ -1,4 +1,5 @@
-package traefik_graphql_limits
+// Package traefikgraphqllimits provides a Traefik plugin to limit the depth of a GraphQL query
+package traefikgraphqllimits
 
 import (
 	"context"
@@ -65,6 +66,8 @@ func TestGraphqlLimitOtherPath(t *testing.T) {
 }
 
 func RunGraphqlLimitsTest(t *testing.T, cfg *Config, body string, expectedCode int) {
+	t.Helper()
+
 	ctx := context.Background()
 	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {})
 
