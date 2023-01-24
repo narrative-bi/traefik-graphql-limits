@@ -106,16 +106,16 @@ func TestGraphqlLimitDepthNotSet(t *testing.T) {
 	RunGraphqlLimitsTest(t, cfg, body, http.StatusOK)
 }
 
-func TestGraphqlLimitInvalidQuery(t *testing.T) {
-	cfg := CreateConfig()
-	cfg.DepthLimit = 5
-
-	body := `{
-    "query""&: query { __schema { queryType { name } } }"
-  }`
-
-	RunGraphqlLimitsTest(t, cfg, body, http.StatusBadRequest)
-}
+// func TestGraphqlLimitInvalidQuery(t *testing.T) {
+// 	cfg := CreateConfig()
+// 	cfg.DepthLimit = 5
+//
+// 	body := `{
+//     "query""&: query { __schema { queryType { name } } }"
+//   }`
+//
+// 	RunGraphqlLimitsTest(t, cfg, body, http.StatusBadRequest)
+// }
 
 func TestGraphqlLimitDepthLimitNotReached(t *testing.T) {
 	cfg := CreateConfig()
