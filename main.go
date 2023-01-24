@@ -33,7 +33,7 @@ const errorGraphqlParsingResponse = `{
 }`
 
 func buildGraphqlMaxDepthError(maxDepth int, depthLimit int) string {
-  errorBody := fmt.Sprintf(`{
+	errorBody := fmt.Sprintf(`{
     "errors": [
       {
         "code": 400,
@@ -41,7 +41,20 @@ func buildGraphqlMaxDepthError(maxDepth int, depthLimit int) string {
       }
     ] }`, maxDepth, depthLimit)
 
-  return errorBody
+	return errorBody
+}
+
+type QueryMetrics struct {
+	maxDepth   int
+	batchCount int
+	nodeCount  int
+}
+
+func (queryMetrics QueryMetrics) CreateQueryMetrics() QueryMetrics {
+	queryMetrics.maxDepth = 0
+	queryMetrics.batchCount = 0
+	queryMetrics.nodeCount = 0
+	return queryMetrics
 }
 
 type Config struct {
@@ -69,8 +82,8 @@ type GraphqlLimit struct {
 	nodeLimit   int
 }
 
-func calculateMaxDepth(astDoc *ast.Document) int {
-	maxDepth := 0
+func calculateQueryMetrics(astDoc *ast.Document) QueryMetrics {
+	queryMetrics := new(QueryMetrics).CreateQueryMetrics()
 
 	v := &visitor.VisitorOptions{
 		KindFuncMap: map[string]visitor.NamedVisitFuncs{
@@ -84,8 +97,8 @@ func calculateMaxDepth(astDoc *ast.Document) int {
 						}
 					}
 
-					if depth > maxDepth {
-						maxDepth = depth
+					if depth > queryMetrics.maxDepth {
+						queryMetrics.maxDepth = depth
 					}
 
 					return visitor.ActionNoChange, nil
@@ -96,7 +109,7 @@ func calculateMaxDepth(astDoc *ast.Document) int {
 
 	_ = visitor.Visit(astDoc, v, nil)
 
-	return maxDepth
+	return queryMetrics
 }
 
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
@@ -147,21 +160,19 @@ func (d *GraphqlLimit) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				return
 			}
 
-			if d.depthLimit > 0 {
-				maxDepth := calculateMaxDepth(parseResults)
+			queryMetrics := calculateQueryMetrics(parseResults)
 
-				if maxDepth > d.depthLimit {
-					respondWithJson(rw, http.StatusBadRequest, buildGraphqlMaxDepthError(maxDepth, d.depthLimit))
-					return
-				}
+			if d.depthLimit > 0 && queryMetrics.maxDepth > d.depthLimit {
+				respondWithJson(rw, http.StatusBadRequest, buildGraphqlMaxDepthError(queryMetrics.maxDepth, d.depthLimit))
+				return
 			}
 
-			if d.batchLimit > 0 {
+			if d.batchLimit > 0 && queryMetrics.batchCount > d.batchLimit {
 				// log.Printf("Batch limit is set to %d", d.depthLimit)
 				respondWithJson(rw, http.StatusBadRequest, errorBodyReadResponse)
 			}
 
-			if d.nodeLimit > 0 {
+			if d.nodeLimit > 0 && queryMetrics.nodeCount > d.nodeLimit {
 				// log.Printf("Node limit is set to %d", d.depthLimit)
 				respondWithJson(rw, http.StatusBadRequest, errorBodyReadResponse)
 			}
