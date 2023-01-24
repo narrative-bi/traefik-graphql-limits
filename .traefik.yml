@@ -1,0 +1,12 @@
+displayName: traefik-graphql-limits
+type: middleware
+
+import: github.com/narrative-bi/traefik-graphql-limits
+
+summary: "Traefik Middleware which allows filtering GraphQL queries by different limits"
+
+testData:
+  GraphQLPath: /graphql
+  DepthLimit: 5
+  BatchLimit: 2
+  NodeLimit: 25

@@ -1,6 +1,6 @@
 # GraphQL Limits
 
-A plugin for [Traefik](https://github.com/traefik/traefik) to filter GraphQL queries by different limits
+[Traefik](https://github.com/traefik/traefik) Middleware which allows filtering GraphQL queries by different limits
 
 ## Options
 
@@ -55,13 +55,13 @@ http:
       rule: Host(`localhost`)
       middlewares:
         - my-traefik-graphql-limits
-  
+
   services:
     graphql-server-service:
       loadBalancer:
         servers:
           - url: http://localhost:5000/
-  
+
   middlewares:
     my-traefik-graphql-limits:
       plugin:
