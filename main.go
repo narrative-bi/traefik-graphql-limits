@@ -44,6 +44,30 @@ func buildGraphqlMaxDepthError(maxDepth int, depthLimit int) string {
 	return errorBody
 }
 
+func buildGraphqlBatchLimitError(batchCount int, batchLimit int) string {
+	errorBody := fmt.Sprintf(`{
+    "errors": [
+      {
+        "code": 400,
+        "message": "Query batch limit of %d, which exceeds limit of %d"
+      }
+    ] }`, batchCount, batchLimit)
+
+	return errorBody
+}
+
+func buildGraphqlNodeLimitError(nodeCount int, nodeLimit int) string {
+	errorBody := fmt.Sprintf(`{
+    "errors": [
+      {
+        "code": 400,
+        "message": "Query node limit of %d, which exceeds limit of %d"
+      }
+    ] }`, nodeCount, nodeLimit)
+
+	return errorBody
+}
+
 type QueryMetrics struct {
 	maxDepth   int
 	batchCount int
@@ -89,12 +113,20 @@ func calculateQueryMetrics(astDoc *ast.Document) QueryMetrics {
 		KindFuncMap: map[string]visitor.NamedVisitFuncs{
 			kinds.SelectionSet: {
 				Enter: func(p visitor.VisitFuncParams) (string, interface{}) {
-					depth := 0
+					// NOTE: We do not calculate initial query depth here, so we start at -1
+					depth := -1
 
 					for _, element := range p.Path {
 						if element == kinds.SelectionSet {
 							depth += 1
 						}
+					}
+
+					// NOTE: Top level query is start of new batch, otherwise it is a node
+					if depth == 0 {
+						queryMetrics.batchCount += 1
+					} else {
+						queryMetrics.nodeCount += 1
 					}
 
 					if depth > queryMetrics.maxDepth {
@@ -151,11 +183,7 @@ func (d *GraphqlLimit) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 			parseResults, err := parser.Parse(params)
 
-			// log.Printf("Parse results: %v", parseResults)
-			// log.Printf("Error parsing query: %v", err)
-
 			if err != nil {
-				// log.Printf("Error parsing query: %v", err)
 				respondWithJson(rw, http.StatusBadRequest, errorGraphqlParsingResponse)
 				return
 			}
@@ -168,13 +196,11 @@ func (d *GraphqlLimit) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			}
 
 			if d.batchLimit > 0 && queryMetrics.batchCount > d.batchLimit {
-				// log.Printf("Batch limit is set to %d", d.depthLimit)
-				respondWithJson(rw, http.StatusBadRequest, errorBodyReadResponse)
+				respondWithJson(rw, http.StatusBadRequest, buildGraphqlBatchLimitError(queryMetrics.batchCount, d.batchLimit))
 			}
 
 			if d.nodeLimit > 0 && queryMetrics.nodeCount > d.nodeLimit {
-				// log.Printf("Node limit is set to %d", d.depthLimit)
-				respondWithJson(rw, http.StatusBadRequest, errorBodyReadResponse)
+				respondWithJson(rw, http.StatusBadRequest, buildGraphqlNodeLimitError(queryMetrics.nodeCount, d.nodeLimit))
 			}
 		}
 	}
