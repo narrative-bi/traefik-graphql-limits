@@ -190,6 +190,9 @@ func (d *GraphqlLimit) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if isGraphqlRequest(req, d.graphQLPath) && needToCheckLimits(d.depthLimit, d.batchLimit, d.nodeLimit) {
 		params := parser.ParseParams{
 			Source: string(body),
+			Options: parser.ParseOptions{
+				NoLocation: true,
+			},
 		}
 
 		parseResults, err := parser.Parse(params)
